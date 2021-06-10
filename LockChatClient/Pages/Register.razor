@@ -1,0 +1,67 @@
+﻿@using LockChatLibrary.Entities;
+@using LockChatLibrary.API;
+@using LockChatLibrary.Services;
+@inject Microsoft.AspNetCore.Http.IHttpContextAccessor HttpContextAccessor
+@inject NavigationManager NavigationManager
+@layout MainLayout
+
+@page "/register"
+
+<h1>Register!</h1>
+
+<div class="container register-form">
+    <div style="display:@msg" class="alert alert-danger" role="alert">
+        Usuario ya registrado!
+    </div>
+    <div class="form">
+        <div class="form-content">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <input @bind="email" type="text" class="form-control" placeholder="Email" />
+                    </div>
+                    <div class="form-group">
+                        <input @bind="password1" type="password" class="form-control" placeholder="Contraseña" />
+                    </div>
+                    <div class="form-group">
+                        <input @bind="password2" type="password" class="form-control" placeholder="Repetir Contraseña" />
+                    </div>
+                </div>
+            </div>
+            <button type="button" @onclick="CallAPI" class="btn btn-primary">Enviar</button>
+        </div>
+    </div>
+</div>
+
+@code {
+
+    private string email;
+    private string password1;
+    private string password2;
+
+    private string msg = "none";
+
+    private async Task CallAPI()
+    {
+        msg = "none";
+        //configuramos la api
+        ApiConfig apiConf = new ApiConfig();
+        apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+        LockChatAPI api = new LockChatAPI(apiConf);
+        //creamos el usuario con los datos del form
+        UserEntity user = new UserEntity()
+        {
+            Email = email,
+            Password = password1
+
+        };
+        //guardamos el usuario en la api
+        int idUser = api.User.AddUser(user);
+        //si hay error durante el registro se muestra un mensaje
+        if (idUser == -1)
+        {
+            msg = "block";
+        }
+        
+    }
+} 

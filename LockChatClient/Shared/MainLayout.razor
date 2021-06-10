@@ -1,0 +1,33 @@
+﻿@using System.Text.Json;
+@inherits LayoutComponentBase
+@inject IJSRuntime jsruntime;
+@inject NavigationManager NavigationManager
+
+<div class="sidebar">
+    <NavMenu />
+</div>
+
+<div class="main">
+    <div class="top-row px-4">
+        <a href="https://docs.microsoft.com/aspnet/" target="_blank">About</a>
+    </div>
+
+    <div class="content px-4">
+        @Body
+    </div>
+</div>
+
+@code {
+
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "AccessToken");
+        if (value is string )
+        {
+            NavigationManager.NavigateTo("/private");
+        }
+    }
+
+} 

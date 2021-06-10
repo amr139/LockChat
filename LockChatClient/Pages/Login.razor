@@ -1,0 +1,103 @@
+﻿@using LockChatLibrary.Entities;
+@using LockChatLibrary.API;
+@using System.Text.Json;
+
+@inject IJSRuntime jsruntime;
+@inject NavigationManager NavigationManager
+@layout MainLayout
+
+
+@page "/login"
+
+<h1>Login!</h1>
+
+<div class="container login-form">
+    <div style="display:@msg" class="alert alert-danger" role="alert">
+        Credenciales erroneas!
+    </div>
+
+    <div class="form">
+        <div class="form-content">
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <input @bind="email" type="text" class="form-control" placeholder="Email" />
+                    </div>
+                    <div class="form-group">
+                        <input @bind="password" type="password" class="form-control" placeholder="Contraseña" />
+                    </div>
+                </div>
+            </div>
+            <button type="button" @onclick="CallAPI" class="btn btn-primary">Enviar</button>
+        </div>
+    </div>
+</div>
+
+
+@code {
+
+
+
+    private string email;
+    private string password;
+
+    private string msg = "none";
+
+    private async Task CallAPI()
+    {
+        msg = "none";
+        //confugramos la api
+        ApiConfig apiConf = new ApiConfig();
+        apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+        LockChatAPI api = new LockChatAPI(apiConf);
+        //creamos un nuevo user con los datos introducidos
+        UserEntity user = new UserEntity()
+        {
+            Email = email,
+            Password = password
+
+        };
+        try
+        {
+            //obtenemos la informacion del usuario (token-idUser).
+            AuthToken auth = api.User.Authenticate(user);
+            //guardamos el jwt en el localstorage
+            await jsruntime.InvokeAsync<object>("localStorage.setItem", "AccessToken", auth.Token);
+            //reconfiguramos la api con el token jwt
+            apiConf = new ApiConfig();
+            apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+            apiConf.Token = auth.Token;
+            api = new LockChatAPI(apiConf);
+            try
+            {
+                //obtenemos el listado de keys del usuario
+                UserKeys keys = api.User.GetKeys();
+                // las almacenamos en localstorege
+                string valor = JsonSerializer.Serialize(keys);
+                await jsruntime.InvokeAsync<object>("localStorage.setItem", "MyKeys", valor);
+                //redirigimos a la parte privada
+                NavigationManager.NavigateTo("/private");
+            }
+            catch(Exception)
+            { //si hay excepcion es que no hay claves almacenadas (primer inicio de sesion)
+
+                //generamos claves nuevas para el usuario 
+                UserKeys key = new UserKeys(auth.idUser);
+                //las guardamos en el servidor
+                if (api.User.SaveKeys(key))
+                {
+                    //y las guardamos tambien en el localstorage
+                    string valor = JsonSerializer.Serialize(key);
+                    await jsruntime.InvokeAsync<object>("localStorage.setItem", "MyKeys", valor);
+                    //redirigimos a la parte privada
+                    NavigationManager.NavigateTo("/private");
+                }
+            }
+        }
+        catch (Exception)
+        {
+            //contraseña erronea
+            msg = "block";
+        }
+    }
+} 

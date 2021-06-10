@@ -1,0 +1,65 @@
+﻿@using LockChatLibrary.API;
+@using LockChatLibrary.Entities;
+
+@inherits LayoutComponentBase
+@inject IJSRuntime jsruntime;
+@inject NavigationManager NavigationManager
+
+<div class="sidebar">
+    <div class="top-row pl-4 navbar navbar-dark">
+        <input @bind="idUser" type="text" class="form-control" placeholder="Nuevo Chat!"  @onkeyup="CrearChat" />
+    </div>
+
+    @foreach (FriendEntity chat in listaChats)
+    {
+        <li class="nav-item px-3">
+            <NavLink class="nav-link" href="@chat.IDtoURL()">
+                <span class="oi oi-chat" aria-hidden="true"></span>@chat.Name
+            </NavLink>
+        </li>
+    }
+</div>
+
+<div class="main">
+    @Body
+</div>
+
+@code{
+
+    IEnumerable<FriendEntity> listaChats = Enumerable.Empty<FriendEntity>();
+
+    string idUser;
+
+    private void CrearChat(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") //Ha pulsado intro == creamos chat
+        {
+            int idNewChat;
+
+            if (Int32.TryParse(idUser, out idNewChat) && listaChats.FirstOrDefault(f => f.UserId == idNewChat) == null)
+            {
+                listaChats = (IEnumerable<FriendEntity>)listaChats.Append(new FriendEntity() { Name = "Nuevo chat", UserId = idNewChat });
+            }
+            NavigationManager.NavigateTo("/chat/"+idUser);
+
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+
+        var value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "AccessToken");
+        if (value is null)
+        {
+            NavigationManager.NavigateTo("/login");
+        }
+        else
+        {
+            ApiConfig apiConf = new ApiConfig();
+            apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+            apiConf.Token = value;
+            LockChatAPI api = new LockChatAPI(apiConf);
+            listaChats = api.Message.GetFriends();
+        }
+    }
+}

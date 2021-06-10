@@ -1,0 +1,146 @@
+﻿@using LockChatClient.Hubs;
+@using LockChatLibrary.API;
+@using LockChatLibrary.Entities;
+@using LockChatLibrary.Services;
+@using System.Text.Json;
+@using System.Text;
+@using System.Web;
+@using libsignal;
+
+@page "/chat/{idChatString}"
+@layout LockChatClient.Shared.ChatLayout
+@inject IJSRuntime jsruntime;
+@inject NavigationManager NavigationManager
+
+<div class="content px-4">
+
+    <table style="width:100%">
+        <tbody>
+
+            @foreach (MessageEntity msg in listaMensajes)
+            {
+                <tr>
+                    @if (msg.SenderId == idChat) //mensaje otro user
+                    {
+                        <td>
+                            <div class="alert alert-secondary" role="alert">
+                                @msg.Stamp | @HttpUtility.HtmlDecode(signalTool.Decrypt(msg.EncryptedText)))
+                            </div>
+                        </td>
+                        <td></td>
+                    }
+                    else //mi mensaje
+                    {
+                        <td></td>
+                        <td>
+                            <div class="alert alert-primary" role="alert">
+                                @msg.Stamp | @HttpUtility.HtmlDecode(signalTool.Decrypt(msg.EncryptedText)))
+                            </div>
+                        </td>
+                    }
+                </tr>
+            }
+
+        </tbody>
+    </table>
+</div>
+<hr />
+<div class="container">
+    <input @bind="mensaje" type="text" class="form-control" placeholder="Escribe aqui tu mensaje!" @onkeyup="KeyEnterEnviarMensaje" />
+</div>
+
+
+@code{
+    [Parameter]
+    public String idChatString { get; set; }
+
+    string mensaje;
+    int idChat;
+    int miID;
+    MSGNotifier wsMSG;
+
+    IEnumerable<MessageEntity> listaMensajes = Enumerable.Empty<MessageEntity>();
+    RatchetingService signalTool;
+
+    private async Task KeyEnterEnviarMensaje(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter") //Ha pulsado intro == creamos chat
+        {
+            if (Int32.TryParse(idChatString, out idChat) && mensaje != "")
+            {
+                //obtenemos el jwt-token
+                string value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "AccessToken");
+                //configuramos la api con el
+                ApiConfig apiConf = new ApiConfig();
+                apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+                apiConf.Token = value;
+                LockChatAPI api = new LockChatAPI(apiConf);
+                //generamos nuevo mensaje
+                MessageEntity msg = new MessageEntity()
+                {
+                    ReceiverId = idChat,
+                    Stamp = DateTimeOffset.Now,
+                    EncryptedText = signalTool.Encrypt(HttpUtility.HtmlEncode(mensaje))
+
+                };
+                //añadimos el mensaje a la lista
+                listaMensajes = (IEnumerable<MessageEntity>)listaMensajes.Append<MessageEntity>(msg);
+                mensaje = "";
+                //lo enviamos a la api
+                api.Message.SaveMessage(msg);
+                //notificamos al websocket que ha habido nuevo mensaje
+                await wsMSG.SendAsync(Mensajes.RECIBIR);
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        //obtenemos el jwt
+        var value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "AccessToken");
+        if (value is null)
+        {//si no hay jwt nos vamos a la pagina de login
+            NavigationManager.NavigateTo("/login");
+        }
+        else
+        {
+            if (Int32.TryParse(idChatString, out idChat))
+            { //si hay jwt y podemos obtener el idChat como enterom
+              //configuramos la api
+                ApiConfig apiConf = new ApiConfig();
+                apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+                apiConf.Token = value;
+                LockChatAPI api = new LockChatAPI(apiConf);
+                //obtenemos de la api el pack de claves del usuario asociado al chat
+                PreKeyBundleEntity ChatKey = api.User.GetKeyBundle(new UserEntity() { Id = idChat });
+                //obtenemos nuestras claves del jwt
+                value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "MyKeys");
+                UserKeys MyKeys = JsonSerializer.Deserialize<UserKeys>(value);
+                //llamamos al servicio de signal protocl
+                signalTool = new RatchetingService(MyKeys, ChatKey, new SignalProtocolAddress(idChat.ToString(), 1));
+                //obtenemos la lista de mensajes del chat
+                listaMensajes = api.Message.GetChat(idChat);
+                //Configuramos el websocket
+                string baseUrl = NavigationManager.BaseUri;
+                wsMSG = new MSGNotifier(idChat, baseUrl);
+                wsMSG.MessageReceived += MensajeRecibido;
+            }
+        }
+    }
+
+    async Task MensajeRecibido(object sender, MessageReceivedEventArgs e)
+    {
+        if (e.Message.Contains(Mensajes.RECIBIR))
+        {
+            var value = await jsruntime.InvokeAsync<string>("localStorage.getItem", "AccessToken");
+            if (value is string)
+            {
+                ApiConfig apiConf = new ApiConfig();
+                apiConf.BaseUrl = LockChatLibrary.Configuration.ApiUrl;
+                apiConf.Token = value;
+                LockChatAPI api = new LockChatAPI(apiConf);
+                listaMensajes = api.Message.GetChat(idChat);
+            }
+        }
+    }
+}
